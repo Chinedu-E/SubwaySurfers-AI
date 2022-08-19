@@ -4,6 +4,7 @@ from keras.layers import Layer
 import tensorflow as tf
 import cv2
 import matplotlib.pyplot as plt
+from keras.models import Model
 import easyocr
 
 READER = easyocr.Reader(['en'])
@@ -17,28 +18,32 @@ class NoisyDense(Layer):
     def build(self, input_shape):
         mu_init = tf.random_uniform_initializer(minval=-1 * 1 / np.power(input_shape[1], 0.5),
                                                 maxval=1 * 1 / np.power(input_shape[1], 0.5))
-        sigma_init = tf.constant_initializer(0.4 / np.power(input_shape[1], 0.5))
+        sigma_init = tf.constant_initializer(0.5 / np.power(input_shape[1], 0.5))
 
         self.w_mu = self.add_weight(
             shape=(input_shape[-1], self.units),
             initializer=mu_init,
+            name="w_mu",
             trainable=True,
         )
         self.w_sigma = self.add_weight(
             shape=(input_shape[-1], self.units),
             initializer=sigma_init,
+            name="w_sigma",
             trainable=True,
         )
 
         self.b_mu = self.add_weight(
             shape=(self.units,),
             initializer=mu_init,
+            name="b_mu",
             trainable=True,
         )
 
         self.b_sigma = self.add_weight(
             shape=(self.units,),
-            initializer=mu_init,
+            initializer=sigma_init,
+            name="b_sigma",
             trainable=True,
         )
 
@@ -71,14 +76,8 @@ def screenshot():
     mon = {'top': 150, 'left': 0, 'width': 400, 'height': 600}
     with mss.mss() as sct:
         state = np.array(sct.grab(mon))
-    state = cv2.resize(state, (150, 150))
-
-    return grayscale(state)
-
-
-def grayscale(state):
-    state = cv2.cvtColor(state, cv2.COLOR_BGRA2GRAY)
-    state = np.reshape(state, (150, 150, 1))
+    state = cv2.cvtColor(state, cv2.COLOR_BGRA2RGB)
+    state = cv2.resize(state, (120, 80))
     state = state/255.
     return state
 
@@ -108,3 +107,30 @@ def read_coins() -> int:
     return coins
 
 
+def moving_average(x, n=4):
+    return np.convolve(x, np.ones(n), 'valid') / n
+
+
+def adjust_reward_and_memorize(experience: list[list], agent, look_back: int = 5) -> None:
+    for i, exp in enumerate(experience):
+
+        if i > len(experience) - look_back:
+            exp[2] = -0.7
+
+        agent.memorize(*exp)
+
+
+def visualize_cnn(model, img):
+    img = np.expand_dims(img, 0)
+    output = [model.layers[1].output]
+    cnn_model = Model(model.inputs, output)
+    features = cnn_model.predict(img)
+
+    for ftr in features:
+        fig = plt.figure(figsize=(12, 12))
+        for i in range(1, 33):
+            fig = plt.subplot(16, 16, i)
+            fig.set_xticks([])
+            fig.set_yticks([])
+            plt.imshow(ftr[0, :, :, i-1])
+        plt.show()
