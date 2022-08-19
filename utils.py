@@ -11,15 +11,21 @@ READER = easyocr.Reader(['en'])
 
 
 class NoisyDense(Layer):
+    '''
+    NoisyNet Layer (using Factorised Gaussian noise)
+    (Fortunato et al. 2017)
+    '''
     def __init__(self, units=32):
         super(NoisyDense, self).__init__()
         self.units = units
 
     def build(self, input_shape):
+        # Initializer of \mu and \sigma
         mu_init = tf.random_uniform_initializer(minval=-1 * 1 / np.power(input_shape[1], 0.5),
                                                 maxval=1 * 1 / np.power(input_shape[1], 0.5))
         sigma_init = tf.constant_initializer(0.5 / np.power(input_shape[1], 0.5))
 
+        # creating weights
         self.w_mu = self.add_weight(
             shape=(input_shape[-1], self.units),
             initializer=mu_init,
@@ -54,12 +60,13 @@ class NoisyDense(Layer):
         f_q = self.f(q)
         w_epsilon = f_p * f_q
         b_epsilon = tf.squeeze(f_q)
-
+        # w = w_mu + w_sigma*w_epsilon
         w = self.w_mu + tf.multiply(self.w_sigma, w_epsilon)
+        # w*x
         ret = tf.matmul(inputs, w)
         # bias
         b = self.b_mu + tf.multiply(self.b_sigma, b_epsilon)
-
+        # y = w*x + b
         return ret + b
 
     @tf.function
@@ -70,7 +77,6 @@ class NoisyDense(Layer):
     @tf.function
     def f(self, x):
         return tf.multiply(tf.sign(x), tf.pow(tf.abs(x), 0.5))
-
 
 def screenshot():
     mon = {'top': 150, 'left': 0, 'width': 400, 'height': 600}
